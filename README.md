@@ -22,6 +22,17 @@ If your backlight is on but the screen is black no matter what you write to GRAM
 
 ---
 
+## 📖 Documentation
+
+Full bring-up docs in [`docs/`](docs/Home.md):
+
+- **[The disp_on_off Inversion](docs/disp_on_off-Inversion.md)** — the black-screen killer, in depth
+- **[Bring-Up Checklist](docs/Bring-Up-Checklist.md)** — everything that has to be right, ordered by pain
+- **[Adding LVGL](docs/Adding-LVGL.md)** — LVGL 8.x without the classic crashes
+- **[Pinout & Hardware](docs/Pinout-and-Hardware.md)** · **[Building & Flashing](docs/Building-and-Flashing.md)**
+
+---
+
 ## Quick start
 
 ```bash
@@ -39,7 +50,7 @@ You should see the screen cycle **red → green → blue → white → black** e
 
 ## Pinout
 
-See [docs/pinout.md](docs/pinout.md). LCD: CS 45, CLK 47, D0–D3 21/48/40/39, BL 1 (PWM), TE 38. Touch (I2C): SDA 4, SCL 8.
+See [docs/Pinout-and-Hardware.md](docs/Pinout-and-Hardware.md). LCD: CS 45, CLK 47, D0–D3 21/48/40/39, BL 1 (PWM), TE 38. Touch (I2C): SDA 4, SCL 8.
 
 ---
 
