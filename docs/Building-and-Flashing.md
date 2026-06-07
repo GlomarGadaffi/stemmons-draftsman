@@ -2,7 +2,7 @@
 
 ## Toolchain
 
-- **ESP-IDF v5.3.x** (the display compiles cleanly here). v6.0.x currently hits a GCC internal compiler error in `esp_lcd_panel_rgb.c`.
+- **ESP-IDF 5.3 through 6.0** — validated on **6.0.1** (builds clean and runs on hardware). The source already handles the 6.0 API changes (`rgb_ele_order` and the split `esp_driver_*` components — see the README's "ESP-IDF 6.0 notes").
 - Target: `esp32s3`.
 
 ```bash
@@ -23,7 +23,7 @@ If you `source export.sh` in a git-bash shell, `idf.py` never lands on `PATH`, a
 
 **Always build from PowerShell:**
 ```powershell
-. C:\esp\v5.3.5\esp-idf\export.ps1
+. C:\esp\v6.0.1\esp-idf\export.ps1
 idf.py build
 ```
 
