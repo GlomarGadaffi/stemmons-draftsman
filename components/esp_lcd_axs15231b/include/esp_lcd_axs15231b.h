@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "hal/spi_ll.h"
 #include "esp_lcd_touch.h"
 #include "esp_lcd_panel_vendor.h"
 
@@ -158,7 +157,7 @@ esp_err_t esp_lcd_new_panel_axs15231b(const esp_lcd_panel_io_handle_t io, const 
     }
 
 /**
- * @brief Create a new AXS15231B1B touch driver
+ * @brief Create a new AXS15231B touch driver
  *
  * @note  The I2C communication should be initialized before use this function.
  *

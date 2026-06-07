@@ -189,7 +189,7 @@ static esp_err_t panel_axs15231b_reset(esp_lcd_panel_t *panel)
         gpio_set_level(axs15231b->reset_gpio_num, !axs15231b->flags.reset_level);
         vTaskDelay(pdMS_TO_TICKS(120));
     } else { // perform software reset
-        tx_param(axs15231b, io, LCD_CMD_SWRESET, NULL, 0);
+        ESP_RETURN_ON_ERROR(tx_param(axs15231b, io, LCD_CMD_SWRESET, NULL, 0), TAG, "send SWRESET failed");
         vTaskDelay(pdMS_TO_TICKS(120)); // spec, wait at least 5m before sending new command
     }
 
@@ -231,8 +231,8 @@ static const axs15231b_lcd_init_cmd_t vendor_specific_init_default[] = {
     {0xA4, (uint8_t[]){0x85, 0x85, 0x95, 0x82, 0xAF, 0xAA, 0xAA, 0x80, 0x10, 0x30, 0x40, 0x40, 0x20, 0xFF, 0x60, 0x30}, 16, 0},
     {0xA4, (uint8_t[]){0x85, 0x85, 0x95, 0x85}, 4, 0},
     {0xBB, (uint8_t[]){0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 8, 0},
-    {0x13, (uint8_t[]){0x00}, 0, 0},
-    {0x11, (uint8_t[]){0x00}, 0, 120},
+    {0x13, NULL, 0, 0},     // NORON  - no parameters
+    {0x11, NULL, 0, 120},   // SLPOUT - no parameters, 120ms wait
     {0x2C, (uint8_t[]){0x00, 0x00, 0x00, 0x00}, 4, 0},
     {0x2A, (uint8_t[]){0x00, 0x00, 0x01, 0x3f}, 4, 0},
     {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0xdf}, 4, 0},
@@ -268,12 +268,16 @@ static esp_err_t panel_axs15231b_init(esp_lcd_panel_t *panel)
         // Check if the command has been used or conflicts with the internal
         switch (init_cmds[i].cmd) {
         case LCD_CMD_MADCTL:
-            is_cmd_overwritten = true;
-            axs15231b->madctl_val = ((uint8_t *)init_cmds[i].data)[0];
+            if (init_cmds[i].data && init_cmds[i].data_bytes >= 1) {
+                is_cmd_overwritten = true;
+                axs15231b->madctl_val = ((uint8_t *)init_cmds[i].data)[0];
+            }
             break;
         case LCD_CMD_COLMOD:
-            is_cmd_overwritten = true;
-            axs15231b->colmod_val = ((uint8_t *)init_cmds[i].data)[0];
+            if (init_cmds[i].data && init_cmds[i].data_bytes >= 1) {
+                is_cmd_overwritten = true;
+                axs15231b->colmod_val = ((uint8_t *)init_cmds[i].data)[0];
+            }
             break;
         default:
             is_cmd_overwritten = false;
@@ -441,7 +445,8 @@ esp_err_t esp_lcd_touch_new_i2c_axs15231b(const esp_lcd_panel_io_handle_t io, co
 
         /* Register interrupt callback */
         if (axs15231b->config.interrupt_callback) {
-            esp_lcd_touch_register_interrupt_callback(axs15231b, axs15231b->config.interrupt_callback);
+            ESP_GOTO_ON_ERROR(esp_lcd_touch_register_interrupt_callback(axs15231b, axs15231b->config.interrupt_callback),
+                              err, TAG, "Register interrupt callback failed");
         }
     }
     /* Prepare pin for touch controller reset */

@@ -54,7 +54,7 @@ static void backlight_init(void)
         .channel    = LEDC_CHANNEL_0,
         .timer_sel  = LEDC_TIMER_1,
         .intr_type  = LEDC_INTR_DISABLE,
-        .duty       = 1023,   /* 100% on a 10-bit resolution */
+        .duty       = 1023,   /* near-max brightness (10-bit count maxes at 1023; 1024 == true 100%) */
         .hpoint     = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&c));
@@ -114,7 +114,7 @@ void app_main(void)
         /* Draw top-to-bottom in bands: the driver issues RAMWR on the first
          * band (y==0) then RAMWRC continuation for the rest. */
         for (int y = 0; y < LCD_V_RES; y += 80)
-            esp_lcd_panel_draw_bitmap(panel, 0, y, LCD_H_RES, y + 80, &fb[y * LCD_H_RES]);
+            ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel, 0, y, LCD_H_RES, y + 80, &fb[y * LCD_H_RES]));
         ESP_LOGI(TAG, "screen = %s", names[i]);
         i = (i + 1) % (sizeof(colors) / sizeof(colors[0]));
         vTaskDelay(pdMS_TO_TICKS(1500));
