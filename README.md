@@ -6,19 +6,18 @@ The vendor ZIP doesn't build cleanly, and most forks render nothing, a garbled i
 
 ---
 
-## ⚠️ The one bug that wastes everyone a day
+## ⚠️ The one thing that wastes everyone a day
 
-This panel's `esp_lcd` driver has an **inverted `disp_on_off()` handler**. Its bool argument means **"off"**, not the usual esp_lcd "on", and esp_lcd passes the value straight through:
+The verified JC3248W535EN init table does **not** issue `DISPON` (0x29) itself, so you **must** turn the display output stage on after init — otherwise the panel stays perfectly black but perfectly backlit, no matter what you write to GRAM:
 
 ```c
-// WRONG — sends DISPOFF. Black, perfectly backlit panel, no matter what you draw.
-esp_lcd_panel_disp_on_off(panel, true);
-
-// RIGHT — false turns the display ON.
-esp_lcd_panel_disp_on_off(panel, false);
+ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
+esp_lcd_panel_disp_on_off(panel, true);   // true == ON (standard esp_lcd contract)
 ```
 
-If your backlight is on but the screen is black no matter what you write to GRAM, **this is almost certainly why.** Check it first.
+If your backlight is on but the screen is black no matter what you write to GRAM, a missing/incorrect `disp_on_off` is almost certainly why. **Check it first.**
+
+> **Note for older forks:** earlier revisions of the `esp_lcd_axs15231b` driver had an *inverted* `disp_on_off()` handler where `true` meant OFF, so you had to pass `false` to turn the display on. **This repo fixes that** — the handler now follows the standard esp_lcd contract (`true == ON`), so it also composes correctly with LVGL / `esp_lvgl_port`, which call `disp_on_off(panel, true)` internally. If you're porting code that passed `false`, flip it to `true`.
 
 ---
 
@@ -26,7 +25,7 @@ If your backlight is on but the screen is black no matter what you write to GRAM
 
 Full bring-up docs in [`docs/`](docs/Home.md):
 
-- **[The disp_on_off Inversion](docs/disp_on_off-Inversion.md)** — the black-screen killer, in depth
+- **[The disp_on_off / DISPON gotcha](docs/disp_on_off-Inversion.md)** — the black-screen killer, in depth
 - **[Bring-Up Checklist](docs/Bring-Up-Checklist.md)** — everything that has to be right, ordered by pain
 - **[Adding LVGL](docs/Adding-LVGL.md)** — LVGL 8.x without the classic crashes
 - **[Pinout & Hardware](docs/Pinout-and-Hardware.md)** · **[Building & Flashing](docs/Building-and-Flashing.md)**
@@ -58,7 +57,7 @@ See [docs/Pinout-and-Hardware.md](docs/Pinout-and-Hardware.md). LCD: CS 45, CLK 
 
 Every one of these was required to get from "dead board" to "rendering UI". In rough order of how badly each one bites:
 
-1. **`disp_on_off(panel, false)` to turn the display ON** (inverted handler — see above). The black-screen killer.
+1. **`disp_on_off(panel, true)` to turn the display ON** (the init table doesn't issue DISPON — see above). The black-screen killer.
 2. **Use the right init sequence.** The AXS15231B ships in several panel variants; the wrong gamma/power table shows nothing or garbage. The table baked into this driver is verified for the JC3248W535EN, and it ends by setting the full CASET/RASET window (`0x2A`/`0x2B`).
 3. **Backlight is PWM, not a GPIO level.** Drive `BL` (GPIO1) with LEDC at full duty. A bare `gpio_set_level(1)` looks dim/dead.
 4. **Big-endian RGB565.** The panel wants byte-swapped pixels. In raw esp_lcd, swap each `uint16_t`; with LVGL set `LV_COLOR_16_SWAP 1` (or `CONFIG_LV_COLOR_16_SWAP=y`).
@@ -79,7 +78,7 @@ This demo is deliberately LVGL-free so the panel path is unambiguous. When you w
 
 ## Credits
 
-The `esp_lcd_axs15231b` driver is **Espressif's** (Apache-2.0); this repo keeps their copyright and ships the JC3248W535EN-specific init table + packaging + the disp_on_off documentation. Pin/init/color details were cross-checked against the excellent community references:
+The `esp_lcd_axs15231b` driver is **Espressif's** (Apache-2.0); this repo keeps their copyright and ships the JC3248W535EN-specific init table + packaging + the disp_on_off contract fix and documentation. Pin/init/color details were cross-checked against the excellent community references:
 
 - [NorthernMan54/JC3248W535EN](https://github.com/NorthernMan54/JC3248W535EN) — board pinout, schematics, working LVGL BSP
 - [tsebelev/esp32_JC3248W535EN_work_exampl_lvgl_axs15231b](https://github.com/tsebelev/esp32_JC3248W535EN_work_exampl_lvgl_axs15231b) — working ESP-IDF + LVGL example

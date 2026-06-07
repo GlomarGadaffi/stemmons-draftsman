@@ -2,8 +2,8 @@
 
 The complete, ordered list of everything that has to be right to go from "dead board" to "rendering UI" on the JC3248W535EN. Ranked by how badly each one bites.
 
-## 1. `disp_on_off(panel, false)` to turn the display ON
-Inverted handler — see **[The disp_on_off Inversion](disp_on_off-Inversion.md)**. The black-screen killer. Passing `true` sends DISPOFF.
+## 1. `disp_on_off(panel, true)` to turn the display ON
+The init table doesn't issue DISPON (0x29), so you must turn the output stage on after init — see **[the DISPON gotcha](disp_on_off-Inversion.md)**. The black-screen killer. (Older forks had an *inverted* handler where you passed `false`; this repo fixes it to the standard `true == ON`.)
 
 ## 2. Use the correct init sequence
 The AXS15231B ships in several panel variants with different gamma/power tables. The wrong one shows nothing or garbage. Use the JC3248W535EN table (baked into the driver in this repo). It ends by setting the full window:

@@ -15,7 +15,7 @@
 #include "esp_lcd_panel_vendor.h"
 
 #define ESP_LCD_AXS15231B_VER_MAJOR    (1)
-#define ESP_LCD_AXS15231B_VER_MINOR    (0)
+#define ESP_LCD_AXS15231B_VER_MINOR    (1)
 #define ESP_LCD_AXS15231B_VER_PATCH    (0)
 
 #ifdef __cplusplus

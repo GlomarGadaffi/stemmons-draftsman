@@ -7,8 +7,9 @@
  * the LEDC PWM backlight, and a solid-color test pattern, so you can confirm the
  * panel is alive before layering a UI on top.
  *
- * THE ONE THING that wastes everyone a day: this driver's disp_on_off() handler
- * has INVERTED semantics. See the call near the bottom of app_main().
+ * THE ONE THING that wastes everyone a day: the init table does NOT issue DISPON,
+ * so you must call esp_lcd_panel_disp_on_off(panel, true) after init or the panel
+ * stays black-but-backlit. See the call near the bottom of app_main().
  */
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -91,15 +92,12 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
 
     /*
-     * !!!!!!!!!!!!!!!!!!!!!!!!!!  READ THIS  !!!!!!!!!!!!!!!!!!!!!!!!!!
-     * This driver's disp_on_off() handler is INVERTED: its bool argument
-     * means "off", not the usual esp_lcd "on". esp_lcd passes the value
-     * straight through, so you MUST pass `false` to turn the display ON.
-     * Passing `true` sends DISPOFF and you get a perfectly black, perfectly
-     * backlit panel no matter what you write to GRAM. This single line is
-     * the #1 reason this board appears "dead".
+     * Turn the display output stage ON. The init table does NOT issue DISPON
+     * (0x29) itself, so this call is required — without it you get a perfectly
+     * black, perfectly backlit panel no matter what you write to GRAM.
+     * (The driver follows the standard esp_lcd contract: true == ON.)
      */
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, false)); /* false == ON here */
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true)); /* true == display ON */
 
     /* ---- Solid-color test: prove the panel + backlight + draw path ---- */
     uint16_t *fb = heap_caps_malloc(LCD_H_RES * LCD_V_RES * sizeof(uint16_t),
