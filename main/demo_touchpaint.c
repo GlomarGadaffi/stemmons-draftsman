@@ -40,6 +40,7 @@ void demo_touchpaint(ui_t *ui, esp_lcd_touch_handle_t tp)
 
     ui_fill(ui, ui_rgb(0, 0, 0));
     ui_back_bar(ui);
+    ui_text(ui, 150, 16, "PAINT", 2, ui_rgb(255, 255, 255));
     ui_flush(ui);
 
     uint32_t strokes = 0;

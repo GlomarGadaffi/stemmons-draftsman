@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "ui.h"
+#include "font8x8.h"
 #include <string.h>
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -64,6 +65,31 @@ void ui_rect(ui_t *ui, int x, int y, int w, int h, uint16_t color)
     }
 }
 
+void ui_text(ui_t *ui, int x, int y, const char *s, int scale, uint16_t color)
+{
+    if (scale < 1) scale = 1;
+    int cx = x;
+    for (const char *p = s; *p; p++) {
+        unsigned char ch = (unsigned char)*p;
+        if (ch >= 128) ch = '?';
+        const unsigned char *g = font8x8_basic[ch];
+        for (int row = 0; row < 8; row++) {
+            unsigned char bits = g[row];
+            for (int col = 0; col < 8; col++) {
+                if (bits & (1u << col))
+                    ui_rect(ui, cx + col * scale, y + row * scale, scale, scale, color);
+            }
+        }
+        cx += 8 * scale;
+    }
+}
+
+int ui_text_w(const char *s, int scale)
+{
+    if (scale < 1) scale = 1;
+    return (int)strlen(s) * 8 * scale;
+}
+
 void ui_flush(ui_t *ui)
 {
     /* Full-screen, top-to-bottom in bands: matches the QSPI driver's
@@ -85,9 +111,7 @@ void ui_flush(ui_t *ui)
 void ui_back_bar(ui_t *ui)
 {
     ui_rect(ui, 0, 0, LCD_H_RES, UI_BACK_H, ui_rgb(60, 60, 60));
-    /* crude left-pointing "back" glyph */
-    ui_rect(ui, 10, UI_BACK_H / 2 - 2, 26, 4, ui_rgb(255, 255, 255));
-    ui_rect(ui, 10, UI_BACK_H / 2 - 8, 4, 16, ui_rgb(255, 255, 255));
+    ui_text(ui, 12, (UI_BACK_H - 8 * 2) / 2, "< BACK", 2, ui_rgb(255, 255, 255));
 }
 
 bool ui_in_back(uint16_t x, uint16_t y)
@@ -99,11 +123,11 @@ bool ui_in_back(uint16_t x, uint16_t y)
 bool board_touch(esp_lcd_touch_handle_t tp, uint16_t *x, uint16_t *y)
 {
     if (esp_lcd_touch_read_data(tp) != ESP_OK) return false;
-    uint16_t xs[1], ys[1], ss[1];
+    esp_lcd_touch_point_data_t pt[1];
     uint8_t n = 0;
-    if (esp_lcd_touch_get_coordinates(tp, xs, ys, ss, &n, 1) && n > 0) {
-        *x = xs[0];
-        *y = ys[0];
+    if (esp_lcd_touch_get_data(tp, pt, &n, 1) == ESP_OK && n > 0) {
+        *x = pt[0].x;
+        *y = pt[0].y;
         return true;
     }
     return false;

@@ -39,6 +39,12 @@ uint16_t ui_rgb(uint8_t r, uint8_t g, uint8_t b);
 void ui_fill(ui_t *ui, uint16_t color);
 void ui_rect(ui_t *ui, int x, int y, int w, int h, uint16_t color);
 
+/* Draw text with the built-in 8x8 font, transparent background (only the set
+ * pixels are drawn, in `color`). `scale` enlarges each pixel (1 = 8px tall). */
+void ui_text(ui_t *ui, int x, int y, const char *s, int scale, uint16_t color);
+/* Pixel width a string would occupy at the given scale. */
+int ui_text_w(const char *s, int scale);
+
 /* Push the whole framebuffer to the panel (full-screen, top-to-bottom). */
 void ui_flush(ui_t *ui);
 

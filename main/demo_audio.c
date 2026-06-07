@@ -39,6 +39,7 @@ void demo_audio(ui_t *ui, esp_lcd_touch_handle_t tp)
     /* ---- Draw the screen + back bar ---- */
     ui_fill(ui, ui_rgb(0, 40, 0));
     ui_back_bar(ui);
+    ui_text(ui, 150, 16, "AUDIO", 2, ui_rgb(255, 255, 255));
     ui_flush(ui);
 
     /* ---- Set up the NEW I2S TX channel ---- */

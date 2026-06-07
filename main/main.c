@@ -122,8 +122,11 @@ static void draw_menu(ui_t *ui)
         ui_rgb(200, 40, 40), ui_rgb(40, 160, 40), ui_rgb(40, 80, 200), ui_rgb(200, 140, 30),
     };
     int bandh = LCD_V_RES / NDEMOS;
-    for (size_t i = 0; i < NDEMOS; i++)
+    for (size_t i = 0; i < NDEMOS; i++) {
         ui_rect(ui, 0, (int)i * bandh, LCD_H_RES, bandh, cols[i]);
+        /* label, left-padded and vertically centered in the band */
+        ui_text(ui, 20, (int)i * bandh + bandh / 2 - 8 * 3 / 2, DEMOS[i].name, 3, ui_rgb(255, 255, 255));
+    }
     ui_flush(ui);
 }
 

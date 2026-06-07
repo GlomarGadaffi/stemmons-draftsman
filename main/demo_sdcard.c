@@ -34,6 +34,7 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
     /* Base screen + back bar first so the UI is immediately responsive. */
     ui_fill(ui, ui_rgb(0, 0, 40));
     ui_back_bar(ui);
+    ui_text(ui, 150, 16, "microSD", 2, ui_rgb(255, 255, 255));
     ui_flush(ui);
 
     sdmmc_card_t *card = NULL;
@@ -62,20 +63,25 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
     if (ret == ESP_OK) {
         mounted = true;
 
-        /* Green status bar just under the back bar. */
-        ui_rect(ui, 0, UI_BACK_H, LCD_H_RES, 40, ui_rgb(0, 180, 0));
-        ui_flush(ui);
+        /* Green status bar + on-screen card summary. */
+        ui_rect(ui, 0, UI_BACK_H, LCD_H_RES, 28, ui_rgb(0, 150, 0));
+        ui_text(ui, 8, UI_BACK_H + 6, "MOUNTED", 2, ui_rgb(255, 255, 255));
 
-        /* Dump card details and capacity to the log. */
         sdmmc_card_print_info(stdout, card);
         uint64_t cap_bytes = (uint64_t)card->csd.capacity * card->csd.sector_size;
-        ESP_LOGI(TAG, "Card mounted: %s, capacity %llu MiB",
-                 card->cid.name, cap_bytes / (1024ULL * 1024ULL));
+        unsigned cap_mb = (unsigned)(cap_bytes / (1024ULL * 1024ULL));
+        ESP_LOGI(TAG, "Card mounted: %s, capacity %u MiB", card->cid.name, cap_mb);
 
-        /* List the root directory; never crash on a bad entry. */
+        char line[280];   /* big enough for a 255-char dir entry name */
+        snprintf(line, sizeof(line), "%s  %u MB", card->cid.name, cap_mb);
+        ui_text(ui, 8, UI_BACK_H + 36, line, 2, ui_rgb(200, 255, 200));
+
+        /* List the root directory; log every entry, draw the first dozen. */
+        int ty = UI_BACK_H + 64;
         DIR *dir = opendir(SD_MOUNT_POINT);
         if (dir == NULL) {
             ESP_LOGW(TAG, "Could not open %s for listing", SD_MOUNT_POINT);
+            ui_text(ui, 8, ty, "(cannot list)", 2, ui_rgb(255, 200, 200));
         } else {
             ESP_LOGI(TAG, "Listing %s:", SD_MOUNT_POINT);
             struct dirent *ent;
@@ -86,31 +92,32 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
                 }
                 char path[300];
                 int n = snprintf(path, sizeof(path), "%s/%s", SD_MOUNT_POINT, ent->d_name);
-                if (n <= 0 || n >= (int)sizeof(path)) {
-                    ESP_LOGW(TAG, "  %s (path too long, size unknown)", ent->d_name);
-                    count++;
-                    continue;
+                bool isdir = false; long sz = 0; bool have = false;
+                if (n > 0 && n < (int)sizeof(path)) {
+                    struct stat st;
+                    if (stat(path, &st) == 0) { isdir = S_ISDIR(st.st_mode); sz = (long)st.st_size; have = true; }
                 }
-                struct stat st;
-                if (stat(path, &st) == 0) {
-                    if (S_ISDIR(st.st_mode)) {
-                        ESP_LOGI(TAG, "  %s/ (dir)", ent->d_name);
-                    } else {
-                        ESP_LOGI(TAG, "  %s (%ld bytes)", ent->d_name, (long)st.st_size);
-                    }
-                } else {
-                    ESP_LOGW(TAG, "  %s (stat failed)", ent->d_name);
+                if (have && isdir)  ESP_LOGI(TAG, "  %s/ (dir)", ent->d_name);
+                else if (have)      ESP_LOGI(TAG, "  %s (%ld bytes)", ent->d_name, sz);
+                else                ESP_LOGW(TAG, "  %s (stat failed)", ent->d_name);
+                if (ty < LCD_V_RES - 20) {   /* draw the first entries that fit */
+                    snprintf(line, sizeof(line), "%s%s", ent->d_name, isdir ? "/" : "");
+                    ui_text(ui, 8, ty, line, 2, ui_rgb(220, 220, 220));
+                    ty += 18;
                 }
                 count++;
             }
             closedir(dir);
             ESP_LOGI(TAG, "%d entr%s in root", count, count == 1 ? "y" : "ies");
         }
+        ui_flush(ui);
     } else {
         /* Red status bar; warn but do NOT abort — the app must run with no card. */
-        ui_rect(ui, 0, UI_BACK_H, LCD_H_RES, 40, ui_rgb(200, 0, 0));
+        ui_rect(ui, 0, UI_BACK_H, LCD_H_RES, 28, ui_rgb(180, 0, 0));
+        ui_text(ui, 8, UI_BACK_H + 6, "NO CARD", 2, ui_rgb(255, 255, 255));
+        ui_text(ui, 8, UI_BACK_H + 40, "insert FAT card", 2, ui_rgb(255, 210, 210));
         ui_flush(ui);
-        ESP_LOGW(TAG, "SD mount failed (%s) — insert a FAT-formatted microSD",
+        ESP_LOGW(TAG, "SD mount failed (%s) - insert a FAT-formatted microSD",
                  esp_err_to_name(ret));
     }
 

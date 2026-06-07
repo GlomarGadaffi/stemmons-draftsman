@@ -26,6 +26,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "demo.wifi_battery";
 
@@ -162,9 +163,13 @@ void demo_wifi_battery(ui_t *ui, esp_lcd_touch_handle_t tp)
 
     ui_fill(ui, col_bg);
     ui_back_bar(ui);
+    ui_text(ui, 120, 16, "WiFi+Batt", 2, ui_rgb(255, 255, 255));
 
-    /* AP count panel: one dot per AP, capped to what fits across the screen. */
+    /* AP count panel: label + one dot per AP, capped to what fits. */
     ui_rect(ui, 12, UI_BACK_H + 16, LCD_H_RES - 24, 56, col_panel);
+    char apline[24];
+    snprintf(apline, sizeof(apline), "WiFi: %d APs", ap_count);
+    ui_text(ui, 18, UI_BACK_H + 22, apline, 2, ui_rgb(220, 230, 255));
     int max_dots = (LCD_H_RES - 24) / (dot_sz + dot_gap);
     int shown = ap_count < max_dots ? ap_count : max_dots;
     for (int i = 0; i < shown; i++) {
@@ -220,6 +225,16 @@ void demo_wifi_battery(ui_t *ui, esp_lcd_touch_handle_t tp)
             int fill_w = bar_w * pct / 100;
 
             uint16_t fill_col = (pct <= 20) ? col_bat_lo : col_bat;
+
+            /* Voltage read-out above the bar. */
+            char bline[24];
+            if (battery_mv > 0)
+                snprintf(bline, sizeof(bline), "Batt: %d.%02d V",
+                         battery_mv / 1000, (battery_mv % 1000) / 10);
+            else
+                snprintf(bline, sizeof(bline), "Batt: --");
+            ui_rect(ui, bar_x, bar_y - 28, bar_w, 18, col_bg);
+            ui_text(ui, bar_x, bar_y - 28, bline, 2, ui_rgb(220, 255, 220));
 
             /* Redraw the track, then the fill on top. */
             ui_rect(ui, bar_x, bar_y, bar_w, bar_h, col_track);
