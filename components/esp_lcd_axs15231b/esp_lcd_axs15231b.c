@@ -303,12 +303,12 @@ static esp_err_t panel_axs15231b_draw_bitmap(esp_lcd_panel_t *panel, int x_start
     y_end += axs15231b->y_gap;
 
     // define an area of frame memory where MCU can access
-    tx_param(axs15231b, io, LCD_CMD_CASET, (uint8_t[]) {
+    ESP_RETURN_ON_ERROR(tx_param(axs15231b, io, LCD_CMD_CASET, (uint8_t[]) {
         (x_start >> 8) & 0xFF,
         x_start & 0xFF,
         ((x_end - 1) >> 8) & 0xFF,
         (x_end - 1) & 0xFF,
-    }, 4);
+    }, 4), TAG, "send CASET failed");
 
     // QSPI path (matches the known-good NorthernMan54/Espressif AXS15231B driver): RASET is
     // intentionally NOT sent per-flush. The init sequence sets the full 0..479 row window, and
@@ -316,20 +316,20 @@ static esp_err_t panel_axs15231b_draw_bitmap(esp_lcd_panel_t *panel, int x_start
     // continuation for the bands below it. This requires a full-screen, top-to-bottom flush
     // order (LVGL full_refresh mode) — see disp_drv.full_refresh in esp_main_display.cpp.
     if (0 == axs15231b->flags.use_qspi_interface) {
-        tx_param(axs15231b, io, LCD_CMD_RASET, (uint8_t[]) {
+        ESP_RETURN_ON_ERROR(tx_param(axs15231b, io, LCD_CMD_RASET, (uint8_t[]) {
             (y_start >> 8) & 0xFF,
             y_start & 0xFF,
             ((y_end - 1) >> 8) & 0xFF,
             (y_end - 1) & 0xFF,
-        }, 4);
+        }, 4), TAG, "send RASET failed");
     }
 
     // transfer frame buffer
     size_t len = (x_end - x_start) * (y_end - y_start) * axs15231b->fb_bits_per_pixel / 8;
     if (y_start == 0) {
-        tx_color(axs15231b, io, LCD_CMD_RAMWR, color_data, len);//2C
+        ESP_RETURN_ON_ERROR(tx_color(axs15231b, io, LCD_CMD_RAMWR, color_data, len), TAG, "send RAMWR failed");//2C
     } else {
-        tx_color(axs15231b, io, LCD_CMD_RAMWRC, color_data, len);//3C
+        ESP_RETURN_ON_ERROR(tx_color(axs15231b, io, LCD_CMD_RAMWRC, color_data, len), TAG, "send RAMWRC failed");//3C
     }
 
     return ESP_OK;
@@ -345,8 +345,7 @@ static esp_err_t panel_axs15231b_invert_color(esp_lcd_panel_t *panel, bool inver
     } else {
         command = LCD_CMD_INVOFF;
     }
-    tx_param(axs15231b, io, command, NULL, 0);
-    return ESP_OK;
+    return tx_param(axs15231b, io, command, NULL, 0);
 }
 
 static esp_err_t panel_axs15231b_mirror(esp_lcd_panel_t *panel, bool mirror_x, bool mirror_y)
@@ -363,10 +362,9 @@ static esp_err_t panel_axs15231b_mirror(esp_lcd_panel_t *panel, bool mirror_x, b
     } else {
         axs15231b->madctl_val &= ~LCD_CMD_MY_BIT;
     }
-    tx_param(axs15231b, io, LCD_CMD_MADCTL, (uint8_t[]) {
+    return tx_param(axs15231b, io, LCD_CMD_MADCTL, (uint8_t[]) {
         axs15231b->madctl_val
     }, 1);
-    return ESP_OK;
 }
 
 static esp_err_t panel_axs15231b_swap_xy(esp_lcd_panel_t *panel, bool swap_axes)
@@ -378,10 +376,9 @@ static esp_err_t panel_axs15231b_swap_xy(esp_lcd_panel_t *panel, bool swap_axes)
     } else {
         axs15231b->madctl_val &= ~LCD_CMD_MV_BIT;
     }
-    tx_param(axs15231b, io, LCD_CMD_MADCTL, (uint8_t[]) {
+    return tx_param(axs15231b, io, LCD_CMD_MADCTL, (uint8_t[]) {
         axs15231b->madctl_val
     }, 1);
-    return ESP_OK;
 }
 
 static esp_err_t panel_axs15231b_set_gap(esp_lcd_panel_t *panel, int x_gap, int y_gap)
@@ -402,8 +399,7 @@ static esp_err_t panel_axs15231b_disp_on_off(esp_lcd_panel_t *panel, bool on_off
     axs15231b_panel_t *axs15231b = __containerof(panel, axs15231b_panel_t, base);
     esp_lcd_panel_io_handle_t io = axs15231b->io;
     int command = on_off ? LCD_CMD_DISPON : LCD_CMD_DISPOFF;
-    tx_param(axs15231b, io, command, NULL, 0);
-    return ESP_OK;
+    return tx_param(axs15231b, io, command, NULL, 0);
 }
 
 esp_err_t esp_lcd_touch_new_i2c_axs15231b(const esp_lcd_panel_io_handle_t io, const esp_lcd_touch_config_t *config, esp_lcd_touch_handle_t *tp)
@@ -509,8 +505,10 @@ static bool touch_axs15231b_get_xy(esp_lcd_touch_handle_t tp, uint16_t *x, uint1
         x[i] = tp->data.coords[i].x;
         y[i] = tp->data.coords[i].y;
 
+        /* The AXS15231B touch report carries no pressure/strength field, so it is
+         * never populated in read_data(). Report 0 rather than an uninitialized value. */
         if (strength) {
-            strength[i] = tp->data.coords[i].strength;
+            strength[i] = 0;
         }
     }
     /* Invalidate */
