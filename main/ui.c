@@ -3,6 +3,43 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "ui.h"
+#include <string.h>
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+#define BAND_ROWS 80   /* flush in 80-row bands (480 % 80 == 0) */
+
+/* The framebuffer lives in PSRAM; DMAing straight from it to the panel can
+ * underflow the SPI TX FIFO when another bus master (e.g. SDMMC) contends for
+ * PSRAM bandwidth, wedging the LCD bus. So we copy each band into a small
+ * internal-RAM bounce buffer and DMA from there, waiting for each band's
+ * transfer to finish (via s_flush_sem) before reusing the buffer. */
+static uint16_t *s_bounce;            /* one band, internal DMA-capable RAM */
+static SemaphoreHandle_t s_flush_sem; /* given by ui_color_trans_done */
+
+bool ui_color_trans_done(esp_lcd_panel_io_handle_t io,
+                         esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+{
+    (void)io; (void)edata; (void)user_ctx;
+    BaseType_t hp = pdFALSE;
+    if (s_flush_sem) xSemaphoreGiveFromISR(s_flush_sem, &hp);
+    return hp == pdTRUE;
+}
+
+void ui_init(ui_t *ui)
+{
+    (void)ui;
+    if (!s_flush_sem) s_flush_sem = xSemaphoreCreateBinary();
+    if (!s_bounce) {
+        s_bounce = heap_caps_malloc(LCD_H_RES * BAND_ROWS * sizeof(uint16_t),
+                                    MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
+    if (!s_bounce || !s_flush_sem) {
+        ESP_LOGE("ui", "bounce/sem alloc failed; flush will fall back to PSRAM DMA");
+    }
+}
 
 uint16_t ui_rgb(uint8_t r, uint8_t g, uint8_t b)
 {
@@ -29,10 +66,20 @@ void ui_rect(ui_t *ui, int x, int y, int w, int h, uint16_t color)
 
 void ui_flush(ui_t *ui)
 {
-    /* Full-screen, top-to-bottom in 80-row bands: matches the QSPI driver's
-     * RAMWR(top band) + RAMWRC(continuation) scheme. 480 % 80 == 0. */
-    for (int y = 0; y < LCD_V_RES; y += 80)
-        esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + 80, &ui->fb[y * LCD_H_RES]);
+    /* Full-screen, top-to-bottom in bands: matches the QSPI driver's
+     * RAMWR(top band) + RAMWRC(continuation) scheme. */
+    if (!s_bounce || !s_flush_sem) {
+        /* Fallback (alloc failed): DMA straight from PSRAM. */
+        for (int y = 0; y < LCD_V_RES; y += BAND_ROWS)
+            esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, &ui->fb[y * LCD_H_RES]);
+        return;
+    }
+    for (int y = 0; y < LCD_V_RES; y += BAND_ROWS) {
+        memcpy(s_bounce, &ui->fb[y * LCD_H_RES], LCD_H_RES * BAND_ROWS * sizeof(uint16_t));
+        esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, s_bounce);
+        /* Wait for this band's DMA to finish before overwriting the bounce buffer. */
+        xSemaphoreTake(s_flush_sem, portMAX_DELAY);
+    }
 }
 
 void ui_back_bar(ui_t *ui)

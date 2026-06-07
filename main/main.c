@@ -59,7 +59,8 @@ static esp_lcd_panel_handle_t display_init(void)
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
     esp_lcd_panel_io_handle_t io = NULL;
-    const esp_lcd_panel_io_spi_config_t io_cfg = AXS15231B_PANEL_IO_QSPI_CONFIG(PIN_CS, NULL, NULL);
+    /* ui_color_trans_done lets ui_flush wait for each band's DMA to complete. */
+    const esp_lcd_panel_io_spi_config_t io_cfg = AXS15231B_PANEL_IO_QSPI_CONFIG(PIN_CS, ui_color_trans_done, NULL);
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_cfg, &io));
 
     axs15231b_vendor_config_t vendor = { .flags = { .use_qspi_interface = 1 } };
@@ -137,6 +138,7 @@ void app_main(void)
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     ESP_ERROR_CHECK(fb ? ESP_OK : ESP_ERR_NO_MEM);
     ui_t ui = { .fb = fb, .panel = panel };
+    ui_init(&ui);   /* internal-RAM bounce buffer + flush sync */
 
     draw_menu(&ui);
     ESP_LOGI(TAG, "home menu ready — tap a band to launch a demo (top->bottom):");

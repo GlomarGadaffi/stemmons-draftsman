@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_touch.h"
 #include "board.h"
@@ -21,6 +22,15 @@ typedef struct {
 } ui_t;
 
 #define UI_BACK_H 48   /* height of the top "back" bar each demo draws */
+
+/* Allocate the internal-RAM bounce buffer + flush sync. Call once after the
+ * panel is created and before the first ui_flush(). */
+void ui_init(ui_t *ui);
+
+/* Panel color-trans-done callback — wire into the panel IO config so ui_flush
+ * can wait for each band's DMA to finish before reusing the bounce buffer. */
+bool ui_color_trans_done(esp_lcd_panel_io_handle_t io,
+                         esp_lcd_panel_io_event_data_t *edata, void *user_ctx);
 
 /* Pack r,g,b into the panel's big-endian RGB565. */
 uint16_t ui_rgb(uint8_t r, uint8_t g, uint8_t b);
