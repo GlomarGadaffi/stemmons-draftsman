@@ -297,6 +297,12 @@ static esp_err_t panel_axs15231b_draw_bitmap(esp_lcd_panel_t *panel, int x_start
     assert((x_start < x_end) && (y_start < y_end) && "start position must be smaller than end position");
     esp_lcd_panel_io_handle_t io = axs15231b->io;
 
+    // Whether this is the top band must be decided from the LVGL-supplied y_start,
+    // before the y_gap offset is folded in. The QSPI continuation scheme below keys
+    // the opening RAMWR (vs. RAMWRC) off the top band, so a nonzero y_gap must not
+    // shift y_start away from 0 and silently demote RAMWR to RAMWRC.
+    bool is_top_band = (y_start == 0);
+
     x_start += axs15231b->x_gap;
     x_end += axs15231b->x_gap;
     y_start += axs15231b->y_gap;
@@ -326,7 +332,7 @@ static esp_err_t panel_axs15231b_draw_bitmap(esp_lcd_panel_t *panel, int x_start
 
     // transfer frame buffer
     size_t len = (x_end - x_start) * (y_end - y_start) * axs15231b->fb_bits_per_pixel / 8;
-    if (y_start == 0) {
+    if (is_top_band) {
         ESP_RETURN_ON_ERROR(tx_color(axs15231b, io, LCD_CMD_RAMWR, color_data, len), TAG, "send RAMWR failed");//2C
     } else {
         ESP_RETURN_ON_ERROR(tx_color(axs15231b, io, LCD_CMD_RAMWRC, color_data, len), TAG, "send RAMWRC failed");//3C
