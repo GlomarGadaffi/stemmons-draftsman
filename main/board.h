@@ -31,7 +31,13 @@
 #define PIN_SD_CMD   11
 #define PIN_SD_D0    13
 
-/* ---- Audio: I2S to NS4168 / AX98357A class-D amp -> speaker ---- */
+/* ---- Audio: I2S to an on-board NS4168 mono BTL class-D amp -> speaker ----
+ * Confirmed from the JC3248W535 V1.0 schematic: DIN=IO41, LRCLK=IO2, BCLK=IO42
+ * (via 0R series links). The amp is powered from VOUT-BAT (battery/boost rail)
+ * and its SD/shutdown pin is tied high through ~1M, so it is ALWAYS enabled --
+ * there is no GPIO mute; start/stop the I2S clock to play/silence. The
+ * differential output runs through an LC filter to an EXTERNAL speaker on the
+ * "Speak" JST 1.25 2P connector. */
 #define PIN_I2S_BCLK 42
 #define PIN_I2S_WS    2
 #define PIN_I2S_DOUT 41
