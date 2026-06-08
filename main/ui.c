@@ -10,36 +10,38 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#define BAND_ROWS 80   /* flush in 80-row bands (480 % 80 == 0) */
+#define BAND_ROWS 40   /* flush in 40-row bands (480 % 40 == 0) */
 
 /* The framebuffer lives in PSRAM; DMAing straight from it to the panel can
  * underflow the SPI TX FIFO when another bus master (e.g. SDMMC) contends for
- * PSRAM bandwidth, wedging the LCD bus. So we copy each band into a small
- * internal-RAM bounce buffer and DMA from there, waiting for each band's
- * transfer to finish (via s_flush_sem) before reusing the buffer. */
-static uint16_t *s_bounce;            /* one band, internal DMA-capable RAM */
-static SemaphoreHandle_t s_flush_sem; /* given by ui_color_trans_done */
+ * PSRAM bandwidth, wedging the LCD bus. So we copy each band into an internal-RAM
+ * bounce buffer and DMA from there. Two buffers are used ping-pong so the CPU can
+ * copy the next band while the current band's DMA is still in flight; s_done (a
+ * counting semaphore, one give per completed transfer) bounds us to 2 in flight.
+ * (Bands stay full-width and top-to-bottom, so the QSPI driver's RAMWR/RAMWRC
+ * continuation scheme is preserved — transfers execute in FIFO queue order.) */
+static uint16_t *s_bounce[2];         /* two bands, internal DMA-capable RAM */
+static SemaphoreHandle_t s_done;      /* counting sem, given by ui_color_trans_done */
 
 bool ui_color_trans_done(esp_lcd_panel_io_handle_t io,
                          esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
     (void)io; (void)edata; (void)user_ctx;
     BaseType_t hp = pdFALSE;
-    if (s_flush_sem) xSemaphoreGiveFromISR(s_flush_sem, &hp);
+    if (s_done) xSemaphoreGiveFromISR(s_done, &hp);
     return hp == pdTRUE;
 }
 
 void ui_init(ui_t *ui)
 {
     (void)ui;
-    if (!s_flush_sem) s_flush_sem = xSemaphoreCreateBinary();
-    if (!s_bounce) {
-        s_bounce = heap_caps_malloc(LCD_H_RES * BAND_ROWS * sizeof(uint16_t),
-                                    MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    }
-    if (!s_bounce || !s_flush_sem) {
+    if (!s_done) s_done = xSemaphoreCreateCounting(2, 0);
+    for (int i = 0; i < 2; i++)
+        if (!s_bounce[i])
+            s_bounce[i] = heap_caps_malloc(LCD_H_RES * BAND_ROWS * sizeof(uint16_t),
+                                           MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_done || !s_bounce[0] || !s_bounce[1])
         ESP_LOGE("ui", "bounce/sem alloc failed; flush will fall back to PSRAM DMA");
-    }
 }
 
 uint16_t ui_rgb(uint8_t r, uint8_t g, uint8_t b)
@@ -92,23 +94,29 @@ int ui_text_w(const char *s, int scale)
 
 void ui_flush(ui_t *ui)
 {
-    /* Full-screen, top-to-bottom in bands: matches the QSPI driver's
-     * RAMWR(top band) + RAMWRC(continuation) scheme. */
-    if (!s_bounce || !s_flush_sem) {
+    /* Full-screen, top-to-bottom in full-width bands: matches the QSPI driver's
+     * RAMWR(top band) + RAMWRC(continuation) scheme. Double-buffered: band N+1's
+     * memcpy overlaps band N's DMA. */
+    if (!s_bounce[0] || !s_bounce[1] || !s_done) {
         /* Fallback (alloc failed): DMA straight from PSRAM. */
         for (int y = 0; y < LCD_V_RES; y += BAND_ROWS)
             esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, &ui->fb[y * LCD_H_RES]);
         return;
     }
-    for (int y = 0; y < LCD_V_RES; y += BAND_ROWS) {
-        memcpy(s_bounce, &ui->fb[y * LCD_H_RES], LCD_H_RES * BAND_ROWS * sizeof(uint16_t));
-        /* Only wait for completion if the color transfer was actually queued.
+    int inflight = 0, band = 0;
+    for (int y = 0; y < LCD_V_RES; y += BAND_ROWS, band++) {
+        /* Free a buffer before reusing it. Transfers complete in FIFO order, so
+         * taking one give means the oldest (the buffer we're about to reuse) is done. */
+        if (inflight == 2) { xSemaphoreTake(s_done, portMAX_DELAY); inflight--; }
+        uint16_t *buf = s_bounce[band & 1];
+        memcpy(buf, &ui->fb[y * LCD_H_RES], LCD_H_RES * BAND_ROWS * sizeof(uint16_t));
+        /* Only wait for completion if the color transfer was actually queued:
          * draw_bitmap propagates errors and may return before issuing tx_color
-         * (e.g. CASET failed) — in that case no on_color_trans_done fires, so an
-         * unconditional take would block forever. ESP_OK <=> a give is coming. */
-        if (esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, s_bounce) == ESP_OK)
-            xSemaphoreTake(s_flush_sem, portMAX_DELAY);
+         * (e.g. CASET failed), in which case no on_color_trans_done arrives. */
+        if (esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, buf) == ESP_OK)
+            inflight++;
     }
+    while (inflight > 0) { xSemaphoreTake(s_done, portMAX_DELAY); inflight--; }
 }
 
 void ui_back_bar(ui_t *ui)
