@@ -102,9 +102,12 @@ void ui_flush(ui_t *ui)
     }
     for (int y = 0; y < LCD_V_RES; y += BAND_ROWS) {
         memcpy(s_bounce, &ui->fb[y * LCD_H_RES], LCD_H_RES * BAND_ROWS * sizeof(uint16_t));
-        esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, s_bounce);
-        /* Wait for this band's DMA to finish before overwriting the bounce buffer. */
-        xSemaphoreTake(s_flush_sem, portMAX_DELAY);
+        /* Only wait for completion if the color transfer was actually queued.
+         * draw_bitmap propagates errors and may return before issuing tx_color
+         * (e.g. CASET failed) — in that case no on_color_trans_done fires, so an
+         * unconditional take would block forever. ESP_OK <=> a give is coming. */
+        if (esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, s_bounce) == ESP_OK)
+            xSemaphoreTake(s_flush_sem, portMAX_DELAY);
     }
 }
 
