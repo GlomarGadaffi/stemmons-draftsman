@@ -6,6 +6,7 @@
 #include "font8x8.h"
 #include <string.h>
 #include "esp_heap_caps.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -40,8 +41,12 @@ void ui_init(ui_t *ui)
         if (!s_bounce[i])
             s_bounce[i] = heap_caps_malloc(LCD_H_RES * BAND_ROWS * sizeof(uint16_t),
                                            MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    /* On this board, DMAing the framebuffer straight from PSRAM underflows the SPI
+     * FIFO and wedges the panel — so a failed bounce/sem alloc is a fatal
+     * misconfiguration, not a soft fallback. Abort loudly rather than run degraded. */
     if (!s_done || !s_bounce[0] || !s_bounce[1])
-        ESP_LOGE("ui", "bounce/sem alloc failed; flush will fall back to PSRAM DMA");
+        ESP_LOGE("ui", "bounce/sem alloc failed (need ~50KB internal DMA RAM)");
+    ESP_ERROR_CHECK((s_done && s_bounce[0] && s_bounce[1]) ? ESP_OK : ESP_ERR_NO_MEM);
 }
 
 uint16_t ui_rgb(uint8_t r, uint8_t g, uint8_t b)
@@ -64,6 +69,31 @@ void ui_rect(ui_t *ui, int x, int y, int w, int h, uint16_t color)
     for (int yy = y; yy < y + h; yy++) {
         uint16_t *row = &ui->fb[yy * LCD_H_RES];
         for (int xx = x; xx < x + w; xx++) row[xx] = color;
+    }
+}
+
+static inline void ui_px(ui_t *ui, int x, int y, uint16_t color)
+{
+    if ((unsigned)x < (unsigned)LCD_H_RES && (unsigned)y < (unsigned)LCD_V_RES)
+        ui->fb[y * LCD_H_RES + x] = color;
+}
+
+void ui_circle(ui_t *ui, int cx, int cy, int r, uint16_t color)
+{
+    if (r < 0) return;
+    int x = r, y = 0, err = 1 - r;   /* midpoint circle, 8-way symmetry */
+    while (x >= y) {
+        ui_px(ui, cx + x, cy + y, color); ui_px(ui, cx - x, cy + y, color);
+        ui_px(ui, cx + x, cy - y, color); ui_px(ui, cx - x, cy - y, color);
+        ui_px(ui, cx + y, cy + x, color); ui_px(ui, cx - y, cy + x, color);
+        ui_px(ui, cx + y, cy - x, color); ui_px(ui, cx - y, cy - x, color);
+        y++;
+        if (err < 0) {
+            err += 2 * y + 1;
+        } else {
+            x--;
+            err += 2 * (y - x) + 1;
+        }
     }
 }
 
@@ -97,12 +127,7 @@ void ui_flush(ui_t *ui)
     /* Full-screen, top-to-bottom in full-width bands: matches the QSPI driver's
      * RAMWR(top band) + RAMWRC(continuation) scheme. Double-buffered: band N+1's
      * memcpy overlaps band N's DMA. */
-    if (!s_bounce[0] || !s_bounce[1] || !s_done) {
-        /* Fallback (alloc failed): DMA straight from PSRAM. */
-        for (int y = 0; y < LCD_V_RES; y += BAND_ROWS)
-            esp_lcd_panel_draw_bitmap(ui->panel, 0, y, LCD_H_RES, y + BAND_ROWS, &ui->fb[y * LCD_H_RES]);
-        return;
-    }
+    if (!s_bounce[0] || !s_bounce[1] || !s_done) return;  /* unreachable: ui_init aborts on alloc failure */
     int inflight = 0, band = 0;
     for (int y = 0; y < LCD_V_RES; y += BAND_ROWS, band++) {
         /* Free a buffer before reusing it. Transfers complete in FIFO order, so

@@ -72,7 +72,7 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
         unsigned cap_mb = (unsigned)(cap_bytes / (1024ULL * 1024ULL));
         ESP_LOGI(TAG, "Card mounted: %s, capacity %u MiB", card->cid.name, cap_mb);
 
-        char line[280];   /* big enough for a 255-char dir entry name */
+        static char line[280];   /* static (single-task demo) to keep it off the stack */
         snprintf(line, sizeof(line), "%s  %u MB", card->cid.name, cap_mb);
         ui_text(ui, 8, UI_BACK_H + 36, line, 2, ui_rgb(200, 255, 200));
 
@@ -90,7 +90,7 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
                 if (ent->d_name[0] == '\0') {
                     continue;
                 }
-                char path[300];
+                static char path[300];
                 int n = snprintf(path, sizeof(path), "%s/%s", SD_MOUNT_POINT, ent->d_name);
                 bool isdir = false; long sz = 0; bool have = false;
                 if (n > 0 && n < (int)sizeof(path)) {

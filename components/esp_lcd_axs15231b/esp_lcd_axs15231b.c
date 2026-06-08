@@ -324,7 +324,7 @@ static esp_err_t panel_axs15231b_draw_bitmap(esp_lcd_panel_t *panel, int x_start
     // intentionally NOT sent per-flush. The init sequence sets the full 0..479 row window, and
     // the frame is filled by a single RAMWR for the top band (y_start==0) followed by RAMWRC
     // continuation for the bands below it. This requires a full-screen, top-to-bottom flush
-    // order (LVGL full_refresh mode) — see disp_drv.full_refresh in esp_main_display.cpp.
+    // order — the app always flushes full-width bands top-to-bottom from ui_flush() in main/ui.c.
     if (0 == axs15231b->flags.use_qspi_interface) {
         ESP_RETURN_ON_ERROR(tx_param(axs15231b, io, LCD_CMD_RASET, (uint8_t[]) {
             (y_start >> 8) & 0xFF,

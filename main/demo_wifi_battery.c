@@ -76,6 +76,40 @@ static void ensure_process_globals(void)
     }
 }
 
+/* Set from the Wi-Fi event handler when an async scan finishes. */
+static volatile bool s_scan_done;
+static void scan_done_cb(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg; (void)base; (void)id; (void)data;
+    s_scan_done = true;
+}
+
+/* One frame of the "scanning" animation: cyan sonar rings pulsing outward from a
+ * center node, with a title and the back bar (so the scan stays cancelable). */
+static void draw_scan_frame(ui_t *ui, int phase)
+{
+    const int cx = LCD_H_RES / 2;
+    const int cy = UI_BACK_H + 210;
+    const int max_r = 130;
+    const int spacing = max_r / 3;
+
+    ui_fill(ui, ui_rgb(8, 12, 24));
+    ui_back_bar(ui);
+    ui_text(ui, cx - ui_text_w("Scanning WiFi", 2) / 2, UI_BACK_H + 28,
+            "Scanning WiFi", 2, ui_rgb(220, 230, 255));
+
+    for (int k = 0; k < 3; k++) {                 /* three rings, staggered */
+        int r = (phase + k * spacing) % max_r;
+        int b = 235 - (r * 210 / max_r);          /* fade as the ring expands */
+        if (b < 20) b = 20;
+        uint16_t c = ui_rgb(0, (uint8_t)b, (uint8_t)b);
+        ui_circle(ui, cx, cy, r, c);
+        ui_circle(ui, cx, cy, r + 1, c);          /* 2px ring for visibility */
+    }
+    ui_rect(ui, cx - 3, cy - 3, 6, 6, ui_rgb(0, 255, 255));   /* center node */
+    ui_flush(ui);
+}
+
 void demo_wifi_battery(ui_t *ui, esp_lcd_touch_handle_t tp)
 {
     ESP_LOGI(TAG, "wifi+battery demo started — tap the back bar to exit");
@@ -114,32 +148,67 @@ void demo_wifi_battery(ui_t *ui, esp_lcd_touch_handle_t tp)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    int ap_count = 0;
-    ESP_ERROR_CHECK(esp_wifi_scan_start(NULL, true));   /* block until done */
+    /* Power-save while the radio is up, then run an ASYNC scan so the UI stays
+     * responsive — animate sonar rings until WIFI_EVENT_SCAN_DONE (or a back-tap). */
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
-    uint16_t n = 0;
-    esp_wifi_scan_get_ap_num(&n);
-    if (n > SCAN_MAX_APS) {
-        n = SCAN_MAX_APS;
-    }
-    if (n > 0) {
-        wifi_ap_record_t *recs = calloc(n, sizeof(*recs));
-        if (recs) {
-            esp_wifi_scan_get_ap_records(&n, recs);
-            ap_count = (int)n;
-            ESP_LOGI(TAG, "found %d AP(s):", ap_count);
-            for (int i = 0; i < ap_count; i++) {
-                ESP_LOGI(TAG, "  %2d. %-32s rssi=%4d ch=%2d %s",
-                         i + 1, (const char *)recs[i].ssid,
-                         recs[i].rssi, recs[i].primary,
-                         authmode_str(recs[i].authmode));
+    int ap_count = 0;
+    bool cancelled = false;
+    s_scan_done = false;
+    esp_event_handler_instance_t scan_h = NULL;
+    esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE,
+                                        scan_done_cb, NULL, &scan_h);
+    wifi_scan_config_t scfg = {
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = { .active = { .min = 60, .max = 150 } },   /* bound per-channel dwell */
+    };
+    if (esp_wifi_scan_start(&scfg, false) == ESP_OK) {
+        uint16_t sx, sy;
+        /* guard caps the wait (~9 s) in case the done-event never arrives */
+        for (int phase = 0, guard = 0; !s_scan_done && guard < 300; phase += 5, guard++) {
+            if (board_touch(tp, &sx, &sy) && ui_in_back(sx, sy)) {
+                cancelled = true;
+                esp_wifi_scan_stop();
+                break;
             }
-            free(recs);
-        } else {
-            ESP_LOGE(TAG, "calloc(%u ap_records) failed", n);
+            draw_scan_frame(ui, phase);
+            vTaskDelay(pdMS_TO_TICKS(30));
         }
     } else {
-        ESP_LOGI(TAG, "no APs found");
+        ESP_LOGW(TAG, "esp_wifi_scan_start failed");
+    }
+    esp_event_handler_instance_unregister(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, scan_h);
+
+    if (cancelled) {
+        ESP_LOGI(TAG, "scan cancelled by user");
+        goto teardown;
+    }
+
+    {
+        uint16_t n = 0;
+        esp_wifi_scan_get_ap_num(&n);
+        if (n > SCAN_MAX_APS) {
+            n = SCAN_MAX_APS;
+        }
+        if (n > 0) {
+            wifi_ap_record_t *recs = calloc(n, sizeof(*recs));
+            if (recs) {
+                esp_wifi_scan_get_ap_records(&n, recs);
+                ap_count = (int)n;
+                ESP_LOGI(TAG, "found %d AP(s):", ap_count);
+                for (int i = 0; i < ap_count; i++) {
+                    ESP_LOGI(TAG, "  %2d. %-32s rssi=%4d ch=%2d %s",
+                             i + 1, (const char *)recs[i].ssid,
+                             recs[i].rssi, recs[i].primary,
+                             authmode_str(recs[i].authmode));
+                }
+                free(recs);
+            } else {
+                ESP_LOGE(TAG, "calloc(%u ap_records) failed", n);
+            }
+        } else {
+            ESP_LOGI(TAG, "no APs found");
+        }
     }
 
     /* ---------- UI loop: AP count (static) + live battery bar ---------- */
@@ -248,6 +317,7 @@ void demo_wifi_battery(ui_t *ui, esp_lcd_touch_handle_t tp)
         since_refresh += POLL_MS;
     }
 
+teardown:
     /* ---------- Teardown (order matters; reverse of bring-up) ---------- */
     esp_wifi_stop();
     esp_wifi_deinit();

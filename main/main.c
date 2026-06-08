@@ -29,6 +29,16 @@
 
 static const char *TAG = "jc3248w535";
 
+#define BL_DUTY_FULL 1023   /* full brightness (10-bit) */
+#define BL_DUTY_DIM   180   /* dimmed-when-idle level */
+#define BL_IDLE_MS  20000   /* dim the backlight after this long with no touch in the menu */
+
+static void backlight_set(int duty)
+{
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
 static void backlight_init(void)
 {
     ledc_timer_config_t t = {
@@ -153,13 +163,21 @@ void app_main(void)
     int bandh = LCD_V_RES / NDEMOS;
     uint16_t x = 0, y = 0;
     bool prev = false;
+    int idle_ms = 0;
+    bool dimmed = false;
     while (1) {
         bool pressed = board_touch(tp, &x, &y);
+        if (pressed) {
+            idle_ms = 0;
+            if (dimmed) { backlight_set(BL_DUTY_FULL); dimmed = false; }
+        }
         if (pressed && !prev) {
             int idx = y / bandh;
             if (idx >= 0 && idx < (int)NDEMOS) {
                 ESP_LOGI(TAG, "launch: %s", DEMOS[idx].name);
                 DEMOS[idx].run(&ui, tp);            /* blocks until the demo returns */
+                backlight_set(BL_DUTY_FULL);        /* a demo may have run a while; wake the panel */
+                dimmed = false; idle_ms = 0;
                 draw_menu(&ui);                     /* redraw the menu on return */
                 while (board_touch(tp, &x, &y))     /* swallow the release */
                     vTaskDelay(pdMS_TO_TICKS(20));
@@ -167,5 +185,7 @@ void app_main(void)
         }
         prev = pressed;
         vTaskDelay(pdMS_TO_TICKS(30));
+        idle_ms += 30;
+        if (!dimmed && idle_ms >= BL_IDLE_MS) { backlight_set(BL_DUTY_DIM); dimmed = true; }
     }
 }
