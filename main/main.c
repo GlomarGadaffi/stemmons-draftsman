@@ -26,6 +26,7 @@
 #include "ui.h"
 #include "demos.h"
 #include "board.h"
+#include "usb_msc.h"
 
 static const char *TAG = "jc3248w535";
 
@@ -148,13 +149,20 @@ void app_main(void)
     ESP_LOGI(TAG, "JC3248W535EN feature showcase");
     backlight_init();
     esp_lcd_panel_handle_t panel = display_init();
-    esp_lcd_touch_handle_t tp = touch_init();
 
     uint16_t *fb = heap_caps_malloc(LCD_H_RES * LCD_V_RES * sizeof(uint16_t),
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     ESP_ERROR_CHECK(fb ? ESP_OK : ESP_ERR_NO_MEM);
     ui_t ui = { .fb = fb, .panel = panel };
     ui_init(&ui);   /* internal-RAM bounce buffer + flush sync */
+
+    /* One-shot: if the SD demo asked for it, come up as a USB drive instead of the
+     * app (touch/Wi-Fi/etc. are skipped). Never returns; unplug USB to go back. */
+    if (usb_msc_requested()) {
+        usb_msc_run(&ui);
+    }
+
+    esp_lcd_touch_handle_t tp = touch_init();
 
     draw_menu(&ui);
     ESP_LOGI(TAG, "home menu ready — tap a band to launch a demo (top->bottom):");

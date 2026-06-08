@@ -22,10 +22,45 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <stdio.h>
+#include "usb_msc.h"
 
 static const char *TAG = "demo.sdcard";
 
 #define SD_MOUNT_POINT "/sdcard"
+
+/* Bottom-strip "Mount as USB Drive" widget (only shown when a card is mounted). */
+#define USB_BTN_Y  (LCD_V_RES - 92)
+#define USB_BTN_H  92
+
+static void draw_usb_button(ui_t *ui)
+{
+    ui_rect(ui, 0, USB_BTN_Y, LCD_H_RES, USB_BTN_H, ui_rgb(0, 60, 90));
+    ui_rect(ui, 8, USB_BTN_Y + 8, LCD_H_RES - 16, USB_BTN_H - 16, ui_rgb(0, 110, 150));
+    ui_text(ui, LCD_H_RES / 2 - ui_text_w("Mount as USB Drive", 2) / 2,
+            USB_BTN_Y + USB_BTN_H / 2 - 8, "Mount as USB Drive", 2, ui_rgb(230, 245, 255));
+}
+
+/* In-place Yes/No confirm in the bottom strip. Returns true if the user confirms. */
+static bool usb_confirm(ui_t *ui, esp_lcd_touch_handle_t tp)
+{
+    ui_rect(ui, 0, USB_BTN_Y, LCD_H_RES, USB_BTN_H, ui_rgb(25, 20, 35));
+    ui_text(ui, LCD_H_RES / 2 - ui_text_w("Reboot to USB mode?", 2) / 2,
+            USB_BTN_Y + 6, "Reboot to USB mode?", 2, ui_rgb(255, 255, 255));
+    ui_rect(ui, 8, USB_BTN_Y + 38, 148, 46, ui_rgb(0, 150, 0));
+    ui_text(ui, 8 + 74 - ui_text_w("YES", 2) / 2, USB_BTN_Y + 53, "YES", 2, ui_rgb(255, 255, 255));
+    ui_rect(ui, 164, USB_BTN_Y + 38, 148, 46, ui_rgb(150, 0, 0));
+    ui_text(ui, 164 + 74 - ui_text_w("NO", 2) / 2, USB_BTN_Y + 53, "NO", 2, ui_rgb(255, 255, 255));
+    ui_flush(ui);
+
+    uint16_t x, y;
+    while (board_touch(tp, &x, &y)) vTaskDelay(pdMS_TO_TICKS(20));   /* swallow the opening tap */
+    while (1) {
+        if (board_touch(tp, &x, &y) && y >= USB_BTN_Y + 38) {
+            return (x < 160);   /* left half = YES */
+        }
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+}
 
 void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
 {
@@ -100,7 +135,7 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
                 if (have && isdir)  ESP_LOGI(TAG, "  %s/ (dir)", ent->d_name);
                 else if (have)      ESP_LOGI(TAG, "  %s (%ld bytes)", ent->d_name, sz);
                 else                ESP_LOGW(TAG, "  %s (stat failed)", ent->d_name);
-                if (ty < LCD_V_RES - 20) {   /* draw the first entries that fit */
+                if (ty < USB_BTN_Y - 4) {   /* draw entries that fit above the USB button */
                     snprintf(line, sizeof(line), "%s%s", ent->d_name, isdir ? "/" : "");
                     ui_text(ui, 8, ty, line, 2, ui_rgb(220, 220, 220));
                     ty += 18;
@@ -121,11 +156,31 @@ void demo_sdcard(ui_t *ui, esp_lcd_touch_handle_t tp)
                  esp_err_to_name(ret));
     }
 
-    /* Idle ~33 Hz until the user taps the back bar. */
+    /* Offer "Mount as USB Drive" only when a card is actually present. */
+    if (mounted) {
+        draw_usb_button(ui);
+        ui_flush(ui);
+    }
+
+    /* Idle ~33 Hz: back bar exits; the USB button (if shown) confirms + reboots. */
     uint16_t x, y;
     while (1) {
-        if (board_touch(tp, &x, &y) && ui_in_back(x, y)) {
-            goto cleanup;
+        if (board_touch(tp, &x, &y)) {
+            if (ui_in_back(x, y)) {
+                goto cleanup;
+            }
+            if (mounted && y >= USB_BTN_Y) {
+                if (usb_confirm(ui, tp)) {
+                    /* Unmount cleanly, then reboot into USB-drive mode (never returns). */
+                    esp_vfs_fat_sdcard_unmount(SD_MOUNT_POINT, card);
+                    mounted = false;
+                    usb_msc_request_reboot();
+                }
+                /* Cancelled — restore the button. */
+                draw_usb_button(ui);
+                ui_flush(ui);
+                while (board_touch(tp, &x, &y)) vTaskDelay(pdMS_TO_TICKS(20));
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(30));
     }

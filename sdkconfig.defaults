@@ -25,6 +25,10 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # the FATFS/SDMMC mount (both deep stack users). The 3584 B default is too small.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
+# --- USB Mass Storage (the "Mount as USB Drive" mode) ---
+CONFIG_TINYUSB_MSC_ENABLED=y
+CONFIG_TINYUSB_MSC_BUFSIZE=8192
+
 # --- Size optimization ---
 # Build for size (-Os) instead of the default debug build (-Og). Biggest, free
 # code-size reduction; no behavior change.
