@@ -60,7 +60,10 @@ static esp_lcd_panel_handle_t display_init(void)
 
     esp_lcd_panel_io_handle_t io = NULL;
     /* ui_color_trans_done lets ui_flush wait for each band's DMA to complete. */
-    const esp_lcd_panel_io_spi_config_t io_cfg = AXS15231B_PANEL_IO_QSPI_CONFIG(PIN_CS, ui_color_trans_done, NULL);
+    esp_lcd_panel_io_spi_config_t io_cfg = AXS15231B_PANEL_IO_QSPI_CONFIG(PIN_CS, ui_color_trans_done, NULL);
+    io_cfg.pclk_hz = 40 * 1000 * 1000;   /* 40 MHz is the stable ceiling on this board.
+                                          * 80 MHz runs but is NOT clean: horizontal-line artifacts in
+                                          * the image and noise coupled into the I2C touch lines. Don't raise. */
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_cfg, &io));
 
     axs15231b_vendor_config_t vendor = { .flags = { .use_qspi_interface = 1 } };
