@@ -1,4 +1,9 @@
-# GPS / GLONASS (u-blox 7) on the JC3248W535EN
+# ~~GPS / GLONASS (u-blox 7) on the JC3248W535EN~~
+
+> ⛔ **REJECTED ALTERNATIVE (ADR-002).** On-board GPS was evaluated and **not
+> adopted** — the receiver is handled off-board. This page is retained as a
+> record of the analysis that led there. Everything below describes the approach
+> we did **not** take.
 
 How to add a **u-blox 7** (NEO-7 / G7020, GPS + GLONASS) receiver to this board.
 There are two transports, because the board's single USB PHY makes the obvious
@@ -47,7 +52,7 @@ Bring-up checklist:
 4. Expect `$GNGGA` / `$GPGSV` / `$GLGSV` within a few seconds of attach; a cold
    position fix follows in ~26 s.
 
-## Option B — UART direct (recommended for most cases)
+## Option B — UART direct ~~(recommended for most cases)~~
 
 Wire the u-blox **UART** to free GPIOs on the rear **JST 1.25 8P IO port**
 (~12 free IO; see [Pinout & Hardware](Pinout-and-Hardware.md)). No VBUS rig, no
@@ -79,10 +84,8 @@ NMEA as Option A.
   `$GLGSV` never appears, send a UBX `CFG-GNSS` frame to enable the GPS+GLONASS
   pair (needs the TX line in Option B, or the OUT endpoint in Option A).
 
-## Open questions
+## Decision
 
-Tracked as issues:
-
-- **#3** — sealed USB stick vs bare UART module? *(decides the transport)*
-- **#4** — transport decision: USB-Host vs UART-direct
-- **#5** — add a `demo_gps` to the bring-up suite *(blocked on #4)*
+**Resolved (ADR-002): on-board GPS was not adopted.** The unit is a sealed USB
+stick, so it is handled off-board. Issues #3 / #4 / #5 are closed as superseded.
+This page is kept as the rejected-alternative record.
