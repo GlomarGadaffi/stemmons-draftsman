@@ -39,3 +39,5 @@ idf.py monitor
 ## notes
 
 see `/docs` for hardware pinout, build checklist, and LVGL integration notes. 40 MHz is stable ceiling on QSPI clock (80 MHz yields noise on I2C touch lines).
+
+~~GPS (u-blox 7) on-board attachment~~ — evaluated and **not adopted** (handled off-board); see [docs/GPS-uBlox7.md](docs/GPS-uBlox7.md) for the rejected-alternative analysis (ADR-002).
