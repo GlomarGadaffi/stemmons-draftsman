@@ -1,4 +1,4 @@
-# stemmons-draftsman
+# jc3248-display-driver
 
 working ESP-IDF driver and bring-up demo for the Guition JC3248W535EN (ESP32-S3, AXS15231B QSPI 320x480 LCD). fixes inverted disp_on_off that black-screens the panel, plus a complete feature showcase: QSPI display + PWM backlight, capacitive touch, microSD, I2S audio, Wi-Fi, battery sensing.
 
